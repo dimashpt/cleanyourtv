@@ -35,6 +35,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -60,6 +61,7 @@ import androidx.dynamicanimation.animation.DynamicAnimation;
 import androidx.dynamicanimation.animation.FloatPropertyCompat;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
+import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -147,6 +149,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean rebuildOnResume = true;
     /** The Inputs or Module cards dropdown while one is open, so onPause can close it. */
     private PopupWindow openPopup;
+    /** On-TV dock order (overrides config after first edit). */
+    private List<String> dockSlots = new ArrayList<>();
+    private TextView dockEditHint;
+    private boolean editModeActive;
+    private boolean editInDock;
+    private String editLiftedPkg;
+    private int editStartPosition = -1;
+    private int editCurrentPosition = -1;
+    private List<String> savedDockSlots = Collections.emptyList();
+    private List<String> savedGridOrder = Collections.emptyList();
+    private long ignoreCenterUntilUptime;
+    private DefaultItemAnimator editItemAnimator;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     /** Refreshes the network pill when the connection changes: at boot Wi-Fi often connects after Home is shown. */
@@ -250,6 +264,31 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         vpnApp = cfg.vpnApp;
         moduleCards = cfg.moduleCards;
         hiddenApps = new HashSet<>(cfg.hiddenApps);
+        dockSlots = new ArrayList<>(DockOrder.normalize(cfg.dockApps, COLUMNS));
+        dockEditHint = findViewById(R.id.dockEditHint);
+        editItemAnimator = new DefaultItemAnimator() {
+            @Override
+            public boolean animateAdd(RecyclerView.ViewHolder holder) {
+                dispatchAddFinished(holder);
+                return false;
+            }
+
+            @Override
+            public boolean animateRemove(RecyclerView.ViewHolder holder) {
+                dispatchRemoveFinished(holder);
+                return false;
+            }
+
+            @Override
+            public boolean animateChange(RecyclerView.ViewHolder oldHolder, RecyclerView.ViewHolder newHolder,
+                                         int fromX, int fromY, int toX, int toY) {
+                dispatchChangeFinished(oldHolder, true);
+                if (newHolder != null) dispatchChangeFinished(newHolder, false);
+                return false;
+            }
+        };
+        editItemAnimator.setSupportsChangeAnimations(false);
+        editItemAnimator.setMoveDuration(!animations ? 0 : (reducedMotion ? 110 : 200));
 
         grid = findViewById(R.id.grid);
         rtlAppGrid = getResources().getBoolean(R.bool.rtl_app_grid);
@@ -385,13 +424,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
-        if (advancedEffects) {
-            for (View button : new View[]{btnInputs, btnWifi, btnSettings}) {
-                button.setOnFocusChangeListener((view, focused) -> view.animate()
-                        .scaleX(focused ? 1.04f : 1f).scaleY(focused ? 1.04f : 1f)
-                        .setDuration(160).start());
-            }
-        }
         if (festive) applyFestiveSkin((TextView) btnInputs, (TextView) btnSettings);
 
         // Hide the glass when focus leaves the tiles.
@@ -472,6 +504,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onNewIntent(intent);
         if (openLauncherSettingsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (editModeActive) cancelEditMode();
         grid.scrollToPosition(0);
         lastFocused = 0;
         lastFocusedKey = adapter.getItemCount() > 0 ? adapter.keyAt(0) : null;
@@ -588,6 +621,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        if (editModeActive) cancelEditMode();
         stopAmbientAnimation();
         heroName.animate().cancel();
         ambient.animate().cancel();
@@ -827,6 +861,303 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         glass.animate().cancel();
         if (animations) glass.animate().alpha(0f).setDuration(160).start();
         else glass.setAlpha(0f);
+    }
+
+    // ---- dock & grid edit mode (lift / move / place) ---------------------------------------------
+
+    @Override
+    public boolean isDockEditActive() {
+        return editModeActive;
+    }
+
+    @Override
+    public void onTileLongPress(int position, View card) {
+        if (editModeActive) return;
+        int kind = adapter.entryKindAt(position);
+        if (kind != AppAdapter.Entry.APP && kind != AppAdapter.Entry.CARD) return;
+        showTileActionsMenu(position);
+    }
+
+    private void showTileActionsMenu(int position) {
+        final String pkg = adapter.pkgAt(position);
+        if (pkg.isEmpty()) return;
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        PopupWindow popup = glassPopup(panel, (int) (230 * density));
+        addSettingsMenuRow(rows, popup, R.string.tile_action_move, () -> beginEditMode(position));
+        if (position < COLUMNS) {
+            addSettingsMenuRow(rows, popup, R.string.tile_action_remove_from_dock, () -> removeFromDock(position));
+        } else {
+            addSettingsMenuRow(rows, popup, R.string.tile_action_add_to_dock, () -> addToDock(position));
+        }
+        addSettingsMenuRow(rows, popup, R.string.tile_action_app_info, () -> openAppInfo(pkg));
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        popup.setWidth(Math.max((int) (230 * density), panel.getMeasuredWidth()));
+        panel.setAlpha(0f);
+        panel.setScaleX(0.94f);
+        panel.setScaleY(0.94f);
+        popup.showAtLocation(root, Gravity.CENTER, 0, 0);
+        if (animations) {
+            panel.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                    .setDuration(reducedMotion ? 100 : 180)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.5f))
+                    .start();
+        } else {
+            panel.setAlpha(1f);
+            panel.setScaleX(1f);
+            panel.setScaleY(1f);
+        }
+        rows.getChildAt(0).requestFocus();
+    }
+
+    private void openAppInfo(String pkg) {
+        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + pkg));
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(i);
+        } catch (ActivityNotFoundException ignored) {
+        }
+    }
+
+    private void addToDock(int position) {
+        String pkg = adapter.pkgAt(position);
+        if (pkg.isEmpty()) return;
+        List<String> slots = DockOrder.normalize(adapter.getDockSlots(), COLUMNS);
+        int emptySlot = DockOrder.firstEmptySlot(slots, adapter.getInstalledAppPkgs());
+        if (emptySlot < 0) {
+            Toast.makeText(this, R.string.dock_full, Toast.LENGTH_SHORT).show();
+            focusTile(position);
+            return;
+        }
+        slots.set(emptySlot, pkg);
+        dockSlots = slots;
+        Config.saveUserDockApps(this, dockSlots);
+        adapter.setDockSlots(dockSlots);
+
+        List<String> gridOrder = adapter.getGridOrder();
+        gridOrder.remove(pkg);
+        adapter.setGridOrder(gridOrder);
+        Config.saveUserGridApps(this, gridOrder);
+
+        lastFocused = emptySlot;
+        lastFocusedKey = adapter.keyAt(position);
+        reloadTiles();
+        grid.post(() -> focusTile(emptySlot));
+    }
+
+    private void removeFromDock(int position) {
+        if (position < 0 || position >= COLUMNS) return;
+        String pkg = adapter.pkgAt(position);
+        if (pkg.isEmpty()) return;
+        String key = adapter.keyAt(position);
+
+        List<String> slots = DockOrder.applyDockClear(DockOrder.normalize(adapter.getDockSlots(), COLUMNS), position);
+        dockSlots = slots;
+        Config.saveUserDockApps(this, dockSlots);
+        adapter.setDockSlots(dockSlots);
+
+        List<String> gridOrder = DockOrder.prependToGridOrder(adapter.getGridOrder(), pkg);
+        adapter.setGridOrder(gridOrder);
+        Config.saveUserGridApps(this, gridOrder);
+
+        lastFocused = COLUMNS;
+        lastFocusedKey = key;
+        reloadTiles();
+        grid.post(() -> focusTile(COLUMNS));
+    }
+
+    private void beginEditMode(int position) {
+        String pkg = adapter.pkgAt(position);
+        if (pkg.isEmpty()) return;
+        editModeActive = true;
+        editInDock = position < COLUMNS;
+        editLiftedPkg = pkg;
+        editStartPosition = position;
+        editCurrentPosition = position;
+        savedDockSlots = adapter.getDockSlots();
+        savedGridOrder = adapter.getGridOrder();
+        ignoreCenterUntilUptime = SystemClock.uptimeMillis() + 350;
+
+        hideGlass();
+        dockEditHint.setText(editInDock ? R.string.dock_edit_hint : R.string.grid_edit_hint);
+        dockEditHint.setAlpha(0f);
+        dockEditHint.setVisibility(View.VISIBLE);
+        if (animations) {
+            dockEditHint.animate().alpha(1f).setDuration(160).start();
+        } else {
+            dockEditHint.setAlpha(1f);
+        }
+
+        grid.setItemAnimator(editItemAnimator);
+        root.setFocusable(true);
+        root.setFocusableInTouchMode(true);
+        root.requestFocus();
+
+        adapter.animateEnterEdit(grid, position, pkg, editInDock);
+        scrollGridToRow(position);
+    }
+
+    private void scrollGridToRow(int position) {
+        if (position < COLUMNS) {
+            int scrollY = grid.computeVerticalScrollOffset();
+            if (scrollY != 0) {
+                if (!animations || reducedMotion) grid.scrollBy(0, -scrollY);
+                else grid.smoothScrollBy(0, -scrollY);
+            }
+            return;
+        }
+        int inner = grid.getWidth() - grid.getPaddingLeft() - grid.getPaddingRight();
+        if (inner <= 0) return;
+        int itemH = AppAdapter.itemHeightPx(AppAdapter.tileHeightPx(AppAdapter.tileWidthPx(inner, COLUMNS, density)), density);
+        int dockRow = itemH + (int) ((6 + 12) * density);
+        int topRow1 = grid.getPaddingTop() + dockRow;
+        int row = position / COLUMNS;
+        int rowTopInContent = topRow1 + (row - 1) * itemH;
+
+        int gridH = grid.getHeight();
+        int targetScreenY = Math.max(0, (gridH - itemH) / 2);
+        int targetScrollY = Math.max(0, rowTopInContent - targetScreenY);
+        int scrollY = grid.computeVerticalScrollOffset();
+        int dy = targetScrollY - scrollY;
+
+        if (dy != 0) {
+            if (!animations || reducedMotion) grid.scrollBy(0, dy);
+            else grid.smoothScrollBy(0, dy);
+        }
+    }
+
+    private void moveEditItemTo(int targetPos) {
+        if (targetPos == editCurrentPosition) return;
+        int fromPos = editCurrentPosition;
+        editCurrentPosition = targetPos;
+        adapter.moveEditItem(fromPos, targetPos);
+
+        if (editInDock) {
+            dockSlots = adapter.getDockSlots();
+        }
+        scrollGridToRow(targetPos);
+    }
+
+    private void confirmEditDrop() {
+        if (!editModeActive) return;
+        editModeActive = false;
+        dockEditHint.animate().cancel();
+        dockEditHint.setVisibility(View.GONE);
+        root.setFocusable(false);
+        root.setFocusableInTouchMode(false);
+
+        if (editInDock) {
+            dockSlots = adapter.getDockSlots();
+            Config.saveUserDockApps(this, dockSlots);
+        } else {
+            Config.saveUserGridApps(this, adapter.getGridOrder());
+        }
+
+        final int finalPos = editCurrentPosition;
+        lastFocused = finalPos;
+        lastFocusedKey = adapter.keyAt(finalPos);
+        adapter.animateExitEdit(grid, finalPos);
+        grid.post(() -> focusTile(finalPos));
+        handler.postDelayed(() -> {
+            if (!editModeActive) {
+                adapter.clearEditVisuals();
+                grid.setItemAnimator(null);
+                focusTile(finalPos);
+            }
+        }, 180);
+    }
+
+    private void cancelEditMode() {
+        if (!editModeActive) return;
+        editModeActive = false;
+        dockEditHint.animate().cancel();
+        dockEditHint.setVisibility(View.GONE);
+        root.setFocusable(false);
+        root.setFocusableInTouchMode(false);
+
+        final int startPos = editStartPosition;
+        if (editCurrentPosition != startPos && startPos >= 0 && startPos < adapter.getItemCount()) {
+            adapter.moveEditItem(editCurrentPosition, startPos);
+        }
+        dockSlots = new ArrayList<>(savedDockSlots);
+        adapter.setDockSlots(dockSlots);
+        adapter.setGridOrder(savedGridOrder);
+
+        lastFocused = startPos;
+        lastFocusedKey = adapter.keyAt(startPos);
+        adapter.animateExitEdit(grid, startPos);
+        grid.post(() -> focusTile(startPos));
+        handler.postDelayed(() -> {
+            if (!editModeActive) {
+                adapter.clearEditVisuals();
+                grid.setItemAnimator(null);
+                focusTile(startPos);
+            }
+        }, 180);
+    }
+
+    private boolean handleEditKey(KeyEvent event) {
+        if (!editModeActive) return false;
+        int keyCode = event.getKeyCode();
+        int action = event.getAction();
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (action == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                cancelEditMode();
+            }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            if (action == KeyEvent.ACTION_UP) {
+                if (SystemClock.uptimeMillis() >= ignoreCenterUntilUptime && !event.isLongPress()) {
+                    confirmEditDrop();
+                }
+            }
+            return true;
+        }
+        if (action != KeyEvent.ACTION_DOWN) {
+            return true;
+        }
+
+        if (editInDock) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                int step = rtlAppGrid ? 1 : -1;
+                moveEditItemTo(Math.max(0, Math.min(COLUMNS - 1, editCurrentPosition + step)));
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                int step = rtlAppGrid ? -1 : 1;
+                moveEditItemTo(Math.max(0, Math.min(COLUMNS - 1, editCurrentPosition + step)));
+            }
+            return true;
+        } else {
+            int start = COLUMNS;
+            int end = adapter.getEditableGridEnd();
+            if (end < start) return true;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                int step = rtlAppGrid ? 1 : -1;
+                moveEditItemTo(Math.max(start, Math.min(end, editCurrentPosition + step)));
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                int step = rtlAppGrid ? -1 : 1;
+                moveEditItemTo(Math.max(start, Math.min(end, editCurrentPosition + step)));
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (editCurrentPosition - COLUMNS >= start) {
+                    moveEditItemTo(editCurrentPosition - COLUMNS);
+                }
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                int curRow = (editCurrentPosition - start) / COLUMNS;
+                int lastRow = (end - start) / COLUMNS;
+                if (curRow < lastRow) {
+                    moveEditItemTo(Math.min(end, editCurrentPosition + COLUMNS));
+                }
+            }
+            return true;
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (editModeActive && handleEditKey(event)) {
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     // ---- navigation ------------------------------------------------------------------------------

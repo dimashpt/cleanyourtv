@@ -32,12 +32,15 @@ final class Config {
     static final String FILE_NAME = "config.json";
     static final String WALLPAPER_NAME = "wallpaper.jpg";
     static final String SETTINGS_NAME = "launcher_settings";
+    static final String PREF_DOCK_APPS = "dock_apps";
+    static final String PREF_GRID_APPS = "grid_apps";
     private static final String THEME_REVISION_NAME = "theme_revision";
     private static final String THEME_SIGNATURE_KEY = "theme_signature";
 
     final List<String> dockApps;
     /** Grid apps fill the dock slots dock_apps leaves free (config.xml, fill_dock); on by default, false leaves the slots empty. */
     final boolean fillDock;
+    final List<String> gridApps;
     final List<String> hiddenApps;
     final String liveTvPackage;
     final String liveTvAction;
@@ -69,7 +72,7 @@ final class Config {
     /** Festive skin from a theme (festival, festival_until, greeting, accent_color); {@link Festival#NONE} if none. */
     final Festival festival;
 
-    private Config(List<String> dockApps, boolean fillDock, List<String> hiddenApps, String liveTvPackage,
+    private Config(List<String> dockApps, boolean fillDock, List<String> gridApps, List<String> hiddenApps, String liveTvPackage,
                    String liveTvAction, String sourcePanelService, String sourcePanelAction, String inputAction,
                    int columns, int rowsBelowDock, boolean animations, boolean advancedEffects,
                    boolean shamsiDate, boolean moduleCards, boolean reducedMotion, String vpnApp,
@@ -78,6 +81,7 @@ final class Config {
                    Festival festival) {
         this.dockApps = Collections.unmodifiableList(dockApps);
         this.fillDock = fillDock;
+        this.gridApps = Collections.unmodifiableList(gridApps);
         this.hiddenApps = Collections.unmodifiableList(hiddenApps);
         this.liveTvPackage = liveTvPackage;
         this.liveTvAction = liveTvAction;
@@ -165,6 +169,9 @@ final class Config {
         syncThemeChoices(choices, dir, file);
         int chosenColumns = choices.getInt("columns", columns);
         if (chosenColumns >= 4 && chosenColumns <= 7) columns = chosenColumns;
+        List<String> userDock = readUserDockApps(choices, columns);
+        if (userDock != null) dock = userDock;
+        List<String> grid = readUserGridApps(choices);
         animations = choices.getBoolean("animations", animations);
         advancedEffects = choices.getBoolean("advanced_effects", advancedEffects);
         File wallpaper = dir != null ? new File(dir, WALLPAPER_NAME) : null;
@@ -175,7 +182,7 @@ final class Config {
         Festival festival = json == null ? Festival.NONE : Festival.parse(string(json, "festival", ""),
                 string(json, "festival_until", ""), string(json, "greeting", ""), string(json, "accent_color", ""));
 
-        return new Config(dock, fillDock, hidden, liveTv, liveTvAction, panelService, panelAction, inputAction,
+        return new Config(dock, fillDock, grid, hidden, liveTv, liveTvAction, panelService, panelAction, inputAction,
                 Math.max(1, columns), Math.max(0, rowsBelow), animations, advancedEffects,
                 shamsi, moduleCards, reducedMotion, vpn, homeSettings, background,
                 Math.max(0, Math.min(100, skyIntensity)), settingsKeycodes, settingsKeyPanel, wallpaper, applied,
@@ -192,10 +199,11 @@ final class Config {
             // explicit theme push or reset by the updated tools.
             SharedPreferences.Editor editor = choices.edit();
             if (!"absent".equals(token)) editor.remove("columns").remove("animations")
-                    .remove("advanced_effects");
+                    .remove("advanced_effects").remove(PREF_DOCK_APPS);
             editor.putString(THEME_SIGNATURE_KEY, signature).commit();
         } else if (!seen.equals(signature)) {
             choices.edit().remove("columns").remove("animations").remove("advanced_effects")
+                    .remove(PREF_DOCK_APPS)
                     .putString(THEME_SIGNATURE_KEY, signature).commit();
         }
     }
@@ -288,5 +296,68 @@ final class Config {
             if (item instanceof String && !((String) item).trim().isEmpty()) out.add(((String) item).trim());
         }
         return out;
+    }
+
+    static void saveUserDockApps(Context ctx, List<String> slots) {
+        JSONArray a = new JSONArray();
+        for (String pkg : slots) {
+            if (pkg == null || pkg.isEmpty()) a.put(JSONObject.NULL);
+            else a.put(pkg);
+        }
+        ctx.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(PREF_DOCK_APPS, a.toString()).apply();
+    }
+
+    static List<String> readUserDockApps(SharedPreferences choices, int columns) {
+        if (!choices.contains(PREF_DOCK_APPS)) return null;
+        String raw = choices.getString(PREF_DOCK_APPS, null);
+        if (raw == null) return null;
+        try {
+            JSONArray a = new JSONArray(raw);
+            List<String> dock = new ArrayList<>();
+            for (int i = 0; i < a.length(); i++) {
+                Object item = a.opt(i);
+                if (item == null || item == JSONObject.NULL) dock.add("");
+                else if (item instanceof String) dock.add(((String) item).trim());
+            }
+            return DockOrder.normalize(dock, columns);
+        } catch (Exception e) {
+            Log.w(TAG, "ignoring dock_apps preference: " + e.getMessage());
+            return null;
+        }
+    }
+
+    static void saveUserGridApps(Context ctx, List<String> pkgs) {
+        JSONArray a = new JSONArray();
+        if (pkgs != null) {
+            for (String pkg : pkgs) {
+                if (pkg != null && !pkg.trim().isEmpty()) {
+                    a.put(pkg.trim());
+                }
+            }
+        }
+        ctx.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(PREF_GRID_APPS, a.toString()).apply();
+    }
+
+    static List<String> readUserGridApps(SharedPreferences choices) {
+        if (!choices.contains(PREF_GRID_APPS)) return Collections.emptyList();
+        String raw = choices.getString(PREF_GRID_APPS, null);
+        if (raw == null) return Collections.emptyList();
+        try {
+            JSONArray a = new JSONArray(raw);
+            List<String> out = new ArrayList<>();
+            for (int i = 0; i < a.length(); i++) {
+                Object item = a.opt(i);
+                if (item instanceof String) {
+                    String s = ((String) item).trim();
+                    if (!s.isEmpty() && !out.contains(s)) out.add(s);
+                }
+            }
+            return out;
+        } catch (Exception e) {
+            Log.w(TAG, "ignoring grid_apps preference: " + e.getMessage());
+            return Collections.emptyList();
+        }
     }
 }

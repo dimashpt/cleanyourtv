@@ -47,7 +47,46 @@
             android:textSize="13sp"
             android:fontFamily="@font/outfit"
             android:visibility="gone" />
+
+        <View
+            android:id="@+id/editBorder"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/tile_edit_lift_border"
+            android:visibility="gone" />
     </FrameLayout>
+
+    <ImageView
+        android:id="@+id/arrowUp"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="center_horizontal|top"
+        android:src="@drawable/ic_arrow_up"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/arrowDown"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="center_horizontal|top"
+        android:src="@drawable/ic_arrow_down"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/arrowLeft"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="center_horizontal|top"
+        android:src="@drawable/ic_arrow_left"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/arrowRight"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="center_horizontal|top"
+        android:src="@drawable/ic_arrow_right"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/name"

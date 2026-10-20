@@ -13,6 +13,8 @@ import android.widget.Toast;
 
 /** Remote-friendly settings owned by the launcher; system settings stay one row away. */
 public final class LauncherSettingsActivity extends Activity {
+    private static final int DOCK_SETTINGS_REQUEST = 43;
+
     private SharedPreferences choices;
     private final TextView[] columnChoices = new TextView[4];
     private TextView animationsChoice;
@@ -73,10 +75,13 @@ public final class LauncherSettingsActivity extends Activity {
                         .show();
             }
         });
+        findViewById(R.id.editDockChoice).setOnClickListener(v ->
+                startActivityForResult(new Intent(this, DockSettingsActivity.class), DOCK_SETTINGS_REQUEST));
         followThemeChoice = findViewById(R.id.followThemeChoice);
         followThemeChoice.setOnClickListener(v -> {
             if (!hasOnTvChoices()) return;
-            choices.edit().remove("columns").remove("animations").remove("advanced_effects").commit();
+            choices.edit().remove("columns").remove("animations").remove("advanced_effects")
+                    .remove(Config.PREF_DOCK_APPS).commit();
             Config current = Config.load(this);
             columns = current.columns;
             animations = current.animations;
@@ -114,9 +119,17 @@ public final class LauncherSettingsActivity extends Activity {
         followThemeChoice.setSelected(!hasOnTvChoices());
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == DOCK_SETTINGS_REQUEST && resultCode == RESULT_OK) {
+            setResult(RESULT_OK);
+        }
+    }
+
     private boolean hasOnTvChoices() {
         return choices.contains("columns") || choices.contains("animations")
-                || choices.contains("advanced_effects");
+                || choices.contains("advanced_effects") || choices.contains(Config.PREF_DOCK_APPS);
     }
 
     private void open(Intent intent) {

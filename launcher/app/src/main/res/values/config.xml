@@ -49,6 +49,8 @@
          projector remote's gear button is scancode 384 (KEY_TAPE). Find yours with
          `tools/tv.py 'getevent -lt'` while pressing the button. Leave empty to omit. -->
     <integer-array name="settings_key_scancodes">
+        <item>204</item>
+        <item>456</item>
     </integer-array>
     <!-- The same by Android keycode, for buttons whose scancode is shared. TCL Google TV remotes send their
          Settings button as keycode 83 (KEYCODE_NOTIFICATION, which the stock Google TV home turned into its quick
@@ -56,11 +58,12 @@
          with `tools/tv.py 'logcat -v time -s InputReader:D'` while pressing the button. Leave empty to omit. -->
     <integer-array name="settings_key_keycodes">
         <item>83</item>
+        <item>288</item>
     </integer-array>
     <!-- What those Settings buttons open: false, the TV's Settings; true, a small glass panel at the top right
          with TV settings, Display, Network, Apps (re-enable an app) and Launcher settings, over whatever is on screen.
          Both keys can also be set from a theme's config.json ("settings_key_keycodes": [83]). -->
-    <bool name="settings_key_panel">false</bool>
+    <bool name="settings_key_panel">true</bool>
 
     <!-- Show the Solar Hijri (Shamsi) date used in Iran and Afghanistan, e.g. "27 Mehr 1405", above the
          Gregorian date. -->

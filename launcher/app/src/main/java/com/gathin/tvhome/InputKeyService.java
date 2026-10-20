@@ -19,6 +19,8 @@ public class InputKeyService extends AccessibilityService {
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
         if (event.getKeyCode() != KeyEvent.KEYCODE_TV) return false;
+        // If a Live TV app exists, let HomeKeyService handle opening the TV app instead of viewing inputs
+        if (getPackageManager().getLeanbackLaunchIntentForPackage("com.tcl.tv") != null) return false;
         if (event.getAction() == KeyEvent.ACTION_UP) {
             try {
                 startActivity(new Intent(ACTION_VIEW_INPUTS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

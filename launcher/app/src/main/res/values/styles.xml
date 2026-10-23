@@ -26,6 +26,15 @@
     </style>
     <style name="TopButton" parent="TopButtonBase" />
 
+    <!-- Icon-only top bar pills: fixed square, drawable centred in the frosted capsule. -->
+    <style name="TopButtonIcon" parent="TopButtonBase">
+        <item name="android:layout_width">42dp</item>
+        <item name="android:paddingStart">11dp</item>
+        <item name="android:paddingEnd">11dp</item>
+        <item name="android:drawablePadding">0dp</item>
+        <item name="android:text"></item>
+    </style>
+
     <style name="SettingsRow">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">52dp</item>

@@ -38,10 +38,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
-import android.text.SpannableString;
-import android.text.Spanned;
-import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -1420,9 +1416,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (shamsi) shamsiDate.setText(Shamsi.today());
     }
 
-    /** Shows the Wi-Fi network name on the button when we can read it, otherwise the connection type. */
+    /** Wi-Fi pill: icon only; network name and VPN state go in the content description for TalkBack. */
     private void updateWifiLabel() {
-        String text = getString(R.string.wifi);
+        String description = getString(R.string.wifi);
         boolean vpn = false, online = false;
         int icon = R.drawable.ic_wifi;
         // The diya's flame: 0 is out (offline), 1 to 4 follow the Wi-Fi signal, Ethernet burns steady at 4.
@@ -1445,10 +1441,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) wifi = true;
             }
             if (!online) {
-                text = getString(R.string.offline);
+                description = getString(R.string.offline);
                 vpn = false;
             } else if (ethernet) {
-                text = getString(R.string.ethernet);
+                description = getString(R.string.ethernet);
                 icon = R.drawable.ic_ethernet;
                 flame = 4;
                 steady = true;
@@ -1459,30 +1455,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 flame = info != null ? Math.max(1, Math.min(4, WifiManager.calculateSignalLevel(info.getRssi(), 5))) : 3;
                 if (ssid != null) {
                     ssid = ssid.replace("\"", "").trim();
-                    if (!ssid.isEmpty() && !ssid.contains("unknown") && !ssid.equals("0x")) text = ssid;
+                    if (!ssid.isEmpty() && !ssid.contains("unknown") && !ssid.equals("0x")) description = ssid;
                 }
             }
         } catch (Exception ignored) {
         }
-        // With a VPN app configured, a VPN that is down matters too: show a red "VPN off" capsule then.
         boolean vpnDown = !vpn && online && !vpnApp.isEmpty();
-        if (vpn || vpnDown) {
-            // Network name, then the green lock-and-VPN (or red "VPN off") capsule drawn in place of the word.
-            String badge = getString(vpn ? R.string.vpn : R.string.vpn_off);
-            VpnBadge span = new VpnBadge(vpn ? getDrawable(R.drawable.ic_lock) : null, density);
-            // The pill has a maximum width and ellipsizes at the end, which would cut the badge off after
-            // a long network name, so shorten the name to whatever room the badge leaves. The total paddings
-            // include the Wi-Fi icon.
-            TextPaint paint = btnWifi.getPaint();
-            float room = btnWifi.getMaxWidth() - btnWifi.getTotalPaddingStart() - btnWifi.getTotalPaddingEnd()
-                    - span.getSize(paint, badge, 0, badge.length(), null) - paint.measureText(" ") - 2 * density;
-            text = TextUtils.ellipsize(text, paint, Math.max(0, room), TextUtils.TruncateAt.END).toString();
-            SpannableString label = new SpannableString(text + " " + badge);
-            label.setSpan(span, text.length() + 1, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            btnWifi.setText(label);
-        } else {
-            btnWifi.setText(text);
+        if (vpn) {
+            icon = R.drawable.ic_lock;
+            description = description + ", " + getString(R.string.vpn);
+        } else if (vpnDown) {
+            description = description + ", " + getString(R.string.vpn_off);
         }
+        btnWifi.setText("");
+        btnWifi.setContentDescription(description);
         if (festive && diya != null) {
             if (online && flame == 0) flame = 3;   // online some other way (cellular, USB tethering)
             diya.setSteady(steady);

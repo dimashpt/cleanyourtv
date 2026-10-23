@@ -1,7 +1,5 @@
 package com.gathin.tvhome;
 
-import android.animation.ArgbEvaluator;
-import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
@@ -11,15 +9,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
-import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.media.tv.TvContract;
@@ -94,11 +87,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private RecyclerView grid;
     private FrameLayout root;
     private GlassView glass;
-    private View ambient;
-    private TextView heroName;
-    private int ambientColor = -1;
-    private ValueAnimator ambientAnimator;
-    private boolean heroShown;
     private boolean animations;
     private boolean advancedEffects;
     private TextView greeting;
@@ -261,15 +249,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             glass.setAlpha(0f);
         }
         if (festive) glass.setAccent(festival.accentColor());
-        ambient = findViewById(R.id.ambient);
-        // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
-        // a fade renders it into a full-screen offscreen buffer first.
-        ambient.forceHasOverlappingRendering(false);
-        heroName = findViewById(R.id.heroName);
-        if (heroName != null) {
-            heroName.setVisibility(View.GONE);
-            heroName.setAlpha(0f);
-        }
         weatherText = findViewById(R.id.weatherText);
         prayerText = findViewById(R.id.prayerText);
         leftBlock = findViewById(R.id.leftBlock);
@@ -696,9 +675,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (restoreFocus) {
             glassShown = false;
             glass.setAlpha(0f);
-            heroShown = false;
-            heroName.setAlpha(0f);
-            ambient.setAlpha(0f);
         }
         reloadTiles();
         if (animate && animations && !reducedMotion) grid.scheduleLayoutAnimation();
@@ -711,7 +687,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int pos = adapter.positionOf(returnKey);
             lastFocused = Math.max(0, Math.min(pos >= 0 ? pos : returnSlot, adapter.getItemCount() - 1));
             lastFocusedKey = adapter.keyAt(lastFocused);
-            if (pos < 0) hideHero();
             // A newly installed app may have brought a card with it.
             tilesReady = true;
             showCardPrompt();
@@ -753,9 +728,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         if (editModeActive) cancelEditMode();
-        stopAmbientAnimation();
-        heroName.animate().cancel();
-        ambient.animate().cancel();
         handler.removeCallbacks(minuteTick);
         if (diya != null) diya.stop();
         // Nothing of ours stays on screen over another app; an undecided prompt simply returns next time.
@@ -845,7 +817,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (!animations || reducedMotion) grid.scrollBy(0, dy);
                 else grid.smoothScrollBy(0, dy);
             }
-            showHero(position, scroll ? r.top - dy : r.top);
         } else {
             applyBackgroundBlur(true);
             if (leftBlock != null) {
@@ -858,9 +829,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 menu.setAlpha(0f);
                 menu.setVisibility(View.INVISIBLE);
             }
-            int color = adapter.ambientColorAt(position);
-            transitionAmbient(color);
-            hideHero();
             // Scroll just enough so the whole tile is visible.
             Rect want = new Rect(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
             grid.requestChildRectangleOnScreen(item, want, reducedMotion);
@@ -872,129 +840,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (enable) {
                 RenderEffect blur = RenderEffect.createBlurEffect(45f, 45f, Shader.TileMode.CLAMP);
                 if (sky != null) sky.setRenderEffect(blur);
-                if (ambient != null) ambient.setRenderEffect(blur);
                 View wall = root.getChildAt(0);
-                if (wall != null && wall != sky && wall != ambient && wall != grid && wall != leftBlock) {
+                if (wall != null && wall != sky && wall != grid && wall != leftBlock) {
                     wall.setRenderEffect(blur);
                 }
             } else {
                 if (sky != null) sky.setRenderEffect(null);
-                if (ambient != null) ambient.setRenderEffect(null);
                 View wall = root.getChildAt(0);
-                if (wall != null && wall != sky && wall != ambient && wall != grid && wall != leftBlock) {
+                if (wall != null && wall != sky && wall != grid && wall != leftBlock) {
                     wall.setRenderEffect(null);
                 }
             }
-        }
-    }
-
-    // ---- top shelf -------------------------------------------------------------------------------
-
-    private void showHero(int position, float dockTopInRoot) {
-        int color = adapter.ambientColorAt(position);
-        if (heroName != null) {
-            heroName.setVisibility(View.GONE);
-            heroName.setAlpha(0f);
-        }
-
-        if (!animations || reducedMotion) {
-            // Snap ambient instead of sliding and fading it
-            ambient.animate().cancel();
-            setAmbient(color);
-            if (!animations) {
-                ambient.setAlpha(1f);
-                heroShown = true;
-            } else if (!heroShown) {
-                ambient.setAlpha(0f);
-                ambient.animate().alpha(1f).setDuration(160).start();
-                heroShown = true;
-            }
-            return;
-        }
-
-        if (!heroShown) {
-            stopAmbientAnimation();
-            ambient.animate().cancel();
-            setAmbient(color);
-            ambient.animate().alpha(1f).setDuration(600).start();
-            heroShown = true;
-        } else {
-            if (advancedEffects) {
-                transitionAmbient(color);
-            } else if (color != ambientColor) {
-                ambient.animate().alpha(0.35f).setDuration(200).withEndAction(() -> {
-                    setAmbient(color);
-                    ambient.animate().alpha(1f).setDuration(500).start();
-                }).start();
-            }
-        }
-    }
-
-    /**
-     * The glow used to be a full-screen radial GradientDrawable. On Android 10 that drawable is
-     * drawn on the CPU, so fading it for half a second redrew 1920×1080 every frame and the
-     * highlight looked like it was running at a few frames per second. A small bitmap stretched
-     * over the screen is one texture. It is painted once in white and tinted with the app's colour,
-     * so changing apps neither repaints it on the CPU (about 11 ms) nor uploads it again.
-     */
-    private void setAmbient(int color) {
-        if (color == ambientColor && ambient.getBackground() != null) return;
-        ambientColor = color;
-        BitmapDrawable glow = (BitmapDrawable) ambient.getBackground();
-        if (glow == null) {
-            int w = 480;
-            int h = 270;
-            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bmp);
-            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            paint.setShader(new RadialGradient(
-                    w * 0.32f, h * 0.42f, w * 0.62f,
-                    new int[]{0x5CFFFFFF, 0x26FFFFFF, 0x00FFFFFF},
-                    new float[]{0f, 0.45f, 1f},
-                    Shader.TileMode.CLAMP));
-            canvas.drawRect(0, 0, w, h, paint);
-            glow = new BitmapDrawable(getResources(), bmp);
-            glow.setGravity(Gravity.FILL);
-            ambient.setBackground(glow);
-        }
-        // The default tint mode, SRC_IN, keeps the mask's alpha and takes the colour from the tint.
-        glow.setTint(0xFF000000 | color);
-    }
-
-    private void transitionAmbient(int color) {
-        // A rapid focus change continues from the colour actually displayed on screen.
-        stopAmbientAnimation();
-        ambient.animate().cancel();
-        if (color == ambientColor) {
-            ambient.animate().alpha(1f).setDuration(180).start();
-            return;
-        }
-        ambient.animate().alpha(1f).setDuration(180).start();
-        ambientAnimator = ValueAnimator.ofObject(new ArgbEvaluator(), ambientColor, color);
-        ambientAnimator.setDuration(360);
-        ambientAnimator.addUpdateListener(animation -> setAmbient((int) animation.getAnimatedValue()));
-        ambientAnimator.start();
-    }
-
-    private void stopAmbientAnimation() {
-        if (ambientAnimator != null) {
-            ambientAnimator.cancel();
-            ambientAnimator = null;
-        }
-    }
-
-    private void hideHero() {
-        if (!heroShown) return;
-        stopAmbientAnimation();
-        if (heroName != null) heroName.animate().cancel();
-        ambient.animate().cancel();
-        heroShown = false;
-        if (animations) {
-            if (heroName != null) heroName.animate().alpha(0f).setDuration(reducedMotion ? 100 : 160).start();
-            ambient.animate().alpha(0.85f).setDuration(reducedMotion ? 140 : 220).start();
-        } else {
-            if (heroName != null) heroName.setAlpha(0f);
-            ambient.setAlpha(0.85f);
         }
     }
 

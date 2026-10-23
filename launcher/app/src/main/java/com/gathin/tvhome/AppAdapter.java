@@ -7,11 +7,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Resources;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Outline;
-import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
@@ -68,14 +64,12 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         final Drawable icon;
         /** Text under the tile when it is focused in the grid: the label, plus the caption for a card. */
         final String name;
-        /** Ambient glow colour; 0 until sampled from the banner, or the card's accent from the start. */
-        int ambient;
 
         Entry(String label, ComponentName component, Drawable banner, Drawable icon) {
-            this(APP, label, component, banner, icon, null, 0);
+            this(APP, label, component, banner, icon, null);
         }
 
-        Entry(int kind, String label, ComponentName component, Drawable banner, Drawable icon, String caption, int accent) {
+        Entry(int kind, String label, ComponentName component, Drawable banner, Drawable icon, String caption) {
             this.kind = kind;
             this.label = label;
             this.component = component;
@@ -83,7 +77,6 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             this.banner = banner;
             this.icon = icon;
             this.name = caption == null ? label : label + " \u00B7 " + caption;
-            this.ambient = accent;
         }
 
         static Entry emptyDockSlot(Context ctx, int slotId) {
@@ -93,8 +86,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
                     new ComponentName(ctx.getPackageName(), "DockEmptySlot_" + slotId),
                     null,
                     null,
-                    null,
-                    0xFF222226
+                    null
             );
         }
     }
@@ -387,16 +379,6 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         }
     }
 
-    int ambientColorForPkg(String pkg) {
-        for (Entry e : items) {
-            if (pkg.equals(e.pkg)) {
-                if (e.ambient == 0) e.ambient = vividColor(e.banner != null ? e.banner : e.icon);
-                return e.ambient;
-            }
-        }
-        return 0xFF444444;
-    }
-
     int entryKindAt(int position) {
         if (position < 0 || position >= items.size()) return -1;
         return items.get(position).kind;
@@ -425,7 +407,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             Drawable banner = loadBanner(pm, ri);
             Drawable icon = ri.loadIcon(pm);
             if (card != null) {
-                allInstalled.add(new Entry(Entry.CARD, card.label, component, banner, icon, card.caption, card.accent));
+                allInstalled.add(new Entry(Entry.CARD, card.label, component, banner, icon, card.caption));
             } else {
                 allInstalled.add(new Entry(Cards.cleanLabel(String.valueOf(ri.loadLabel(pm)), pkg), component, banner, icon));
             }
@@ -488,7 +470,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
                 && pm.resolveActivity(new Intent(Settings.ACTION_HOME_SETTINGS), 0) != null) {
             fresh.add(new Entry(Entry.HOME_SETTINGS, ctx.getString(R.string.home_settings),
                     new ComponentName(ctx, HomeSettingsActivity.class), null,
-                    ctx.getDrawable(R.drawable.ic_home_settings), null, 0));
+                    ctx.getDrawable(R.drawable.ic_home_settings), null));
         }
 
         items.clear();
@@ -712,56 +694,6 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
 
     float focusScale() {
         return !animations ? 1f : FOCUS_SCALE;
-    }
-
-    /** A vivid colour sampled from the app's banner (or icon), cached per entry; a card's accent when it set one. */
-    int ambientColorAt(int position) {
-        if (position < 0 || position >= items.size()) return 0xFF444444;
-        Entry e = items.get(position);
-        if (e.ambient == 0) e.ambient = vividColor(e.banner != null ? e.banner : e.icon);
-        return e.ambient;
-    }
-
-    private static int vividColor(Drawable live) {
-        if (live == null) return 0xFF444444;
-        // Draw a private copy: changing the bounds of the drawable an ImageView shows would blank the tile.
-        Drawable d = live.getConstantState() != null ? live.getConstantState().newDrawable().mutate() : live;
-        Rect saved = new Rect(d.getBounds());
-        int n = 12;
-        Bitmap bmp = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(bmp);
-        d.setBounds(0, 0, n, n);
-        d.draw(c);
-        d.setBounds(saved);
-        float[] hsv = new float[3];
-        int best = 0xFF444444;
-        float bestScore = -1f;
-        long r = 0, g = 0, b = 0;
-        for (int y = 0; y < n; y++) {
-            for (int x = 0; x < n; x++) {
-                int p = bmp.getPixel(x, y);
-                r += Color.red(p);
-                g += Color.green(p);
-                b += Color.blue(p);
-                Color.colorToHSV(p, hsv);
-                float score = hsv[1] * Math.min(1f, hsv[2] * 1.4f);   // saturated and not too dark
-                if (score > bestScore) {
-                    bestScore = score;
-                    best = p;
-                }
-            }
-        }
-        bmp.recycle();
-        if (bestScore < 0.25f) {   // nearly monochrome banner (e.g. white): use its average, lifted
-            int avg = Color.rgb((int) (r / (n * n)), (int) (g / (n * n)), (int) (b / (n * n)));
-            Color.colorToHSV(avg, hsv);
-            hsv[2] = Math.max(hsv[2], 0.55f);
-            return Color.HSVToColor(hsv);
-        }
-        Color.colorToHSV(best, hsv);
-        hsv[1] = Math.min(1f, hsv[1] * 1.1f);
-        hsv[2] = Math.max(0.5f, hsv[2]);
-        return Color.HSVToColor(hsv);
     }
 
     /** Corner radius for a tile of this width: 16dp at the design width, proportionally less when smaller. */

@@ -21,8 +21,8 @@ import java.util.Calendar;
  * glow that travels with the sun. Off by default (config.xml, sky_intensity = 0); a theme turns
  * it on with {@code "sky_intensity": 60}.
  *
- * Like the ambient glow, the backdrop is one small bitmap (480x270) stretched over the screen:
- * a gradient repainted at full resolution every minute is exactly the CPU cost the ambient glow
+ * Like the focus glow, the backdrop is one small bitmap (480x270) stretched over the screen:
+ * a gradient repainted at full resolution every minute is exactly the CPU cost the focus glow
  * was rewritten to avoid on weak GPUs. It is redrawn once a minute and never animated, so the
  * cost is a single full-screen draw per minute.
  */

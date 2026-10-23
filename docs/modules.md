@@ -4,7 +4,7 @@ A module is a normal Android TV app that declares a card for this launcher. Your
 licence, your signing key, released as an APK wherever you like, for example on your GitHub
 Releases page with its SHA-256. The TV owner sideloads it like any other app. The launcher finds the
 card and asks the owner once; if they answer Show, your app appears as a card from then on: your
-label, an optional caption, and your colour in the ambient glow, placed ahead of the alphabetical
+label and an optional caption, placed ahead of the alphabetical
 grid.
 
 The contract is [`docs/specs/card.md`](specs/card.md). This page is the short version.

@@ -17,6 +17,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
+import android.graphics.RenderEffect;
 import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
@@ -112,6 +113,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Optional time-of-day backdrop (config.xml, sky_intensity); 0 keeps it hidden. */
     private SkyView sky;
     private String vpnApp;
+    private View leftBlock;
+    private WeatherManager weatherManager;
+    private TextView weatherText;
+    private PrayerManager prayerManager;
+    private TextView prayerText;
+    private View menu;
     private SpringAnimation springX, springY;
     private float glassTargetX, glassTargetY;
     // How far the grid has scrolled the glass. springY works without it, in grid content space, so a
@@ -167,7 +174,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
         public void onAvailable(@NonNull Network network) {
-            handler.post(MainActivity.this::updateWifiLabel);
+            handler.post(() -> {
+                updateWifiLabel();
+                if (weatherManager != null) weatherManager.refreshIfStale();
+                if (prayerManager != null && weatherManager != null) {
+                    prayerManager.refreshIfStale(weatherManager.getLastCity());
+                }
+            });
         }
 
         @Override
@@ -215,6 +228,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             updateGreeting();
             updateWifiLabel();
             sky.update();
+            if (prayerManager != null) {
+                prayerManager.updateDisplay();
+            }
             handler.postDelayed(this, MINUTE_MS);
         }
     };
@@ -244,12 +260,37 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         sky = findViewById(R.id.sky);
         sky.setIntensity(cfg.skyIntensity);
         glass = findViewById(R.id.glass);
+        if (glass != null) {
+            glass.setVisibility(View.GONE);
+            glass.setAlpha(0f);
+        }
         if (festive) glass.setAccent(festival.accentColor());
         ambient = findViewById(R.id.ambient);
         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
         // a fade renders it into a full-screen offscreen buffer first.
         ambient.forceHasOverlappingRendering(false);
         heroName = findViewById(R.id.heroName);
+        if (heroName != null) {
+            heroName.setVisibility(View.GONE);
+            heroName.setAlpha(0f);
+        }
+        weatherText = findViewById(R.id.weatherText);
+        prayerText = findViewById(R.id.prayerText);
+        leftBlock = findViewById(R.id.leftBlock);
+        weatherManager = new WeatherManager(this);
+        weatherManager.setCallback(text -> {
+            if (weatherText != null && text != null) {
+                weatherText.setText(text);
+            }
+        });
+        weatherManager.refreshIfStale();
+        prayerManager = new PrayerManager(this);
+        prayerManager.setCallback(text -> {
+            if (prayerText != null && text != null) {
+                prayerText.setText(text);
+            }
+        });
+        prayerManager.refreshIfStale(weatherManager.getLastCity());
         greeting = findViewById(R.id.greeting);
         greetingColor = greeting.getCurrentTextColor();
         btnWifi = findViewById(R.id.btnWifi);
@@ -312,18 +353,55 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             public boolean requestChildRectangleOnScreen(@NonNull RecyclerView parent, @NonNull View child,
                                                          @NonNull Rect rect, boolean immediate,
                                                          boolean focusedChildVisible) {
-                if (getPosition(child) < COLUMNS) return false;
+                int pos = getPosition(child);
+                if (pos < COLUMNS) return false;
+
+                int scrollY = parent.computeVerticalScrollOffset();
+                int dockTargetTop = (int) (20 * density);
+                int expandScrollY = parent.getPaddingTop() - dockTargetTop;
+
                 int top = child.getTop() + rect.top;
                 int bottom = top + rect.height();
                 int limitBottom = getHeight() - getPaddingBottom();
-                int dy;
-                if (top < 0) dy = top;
-                else if (bottom > limitBottom) dy = Math.min(top, bottom - limitBottom);
-                else dy = 0;
+
+                int dy = 0;
+                if (scrollY < expandScrollY) {
+                    // Full expand: move dock to top of screen
+                    dy = expandScrollY - scrollY;
+                    int childBottomAfter = bottom - dy;
+                    if (childBottomAfter > limitBottom) {
+                        dy += (childBottomAfter - limitBottom);
+                    }
+                } else if (top < dockTargetTop + (int) (70 * density)) {
+                    dy = top - (dockTargetTop + (int) (70 * density));
+                } else if (bottom > limitBottom) {
+                    dy = Math.min(top - (dockTargetTop + (int) (70 * density)), bottom - limitBottom);
+                }
+
                 if (dy == 0) return false;
                 if (immediate || reducedMotion || !animations) parent.scrollBy(0, dy);
                 else parent.smoothScrollBy(0, dy);
                 return true;
+            }
+
+            @Override
+            public void smoothScrollToPosition(RecyclerView recyclerView, RecyclerView.State state, int position) {
+                androidx.recyclerview.widget.LinearSmoothScroller scroller =
+                        new androidx.recyclerview.widget.LinearSmoothScroller(recyclerView.getContext()) {
+                    @Override
+                    public int calculateDyToMakeVisible(View view, int snapPreference) {
+                        int pos = getPosition(view);
+                        if (pos >= COLUMNS && pos < COLUMNS * 2) {
+                            int scrollY = recyclerView.computeVerticalScrollOffset();
+                            int dockTargetTop = (int) (20 * density);
+                            int expandScrollY = recyclerView.getPaddingTop() - dockTargetTop;
+                            return expandScrollY - scrollY;
+                        }
+                        return super.calculateDyToMakeVisible(view, snapPreference);
+                    }
+                };
+                scroller.setTargetPosition(position);
+                startSmoothScroll(scroller);
             }
         });
         grid.setHasFixedSize(true);
@@ -345,19 +423,71 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int h = b - t;
             // Item height follows the tile size, which follows the column count (AppAdapter.tileWidthPx).
             int inner = (r - l) - grid.getPaddingLeft() - grid.getPaddingRight();
-            int itemH = AppAdapter.itemHeightPx(AppAdapter.tileHeightPx(AppAdapter.tileWidthPx(inner, COLUMNS, density)), density);
-            int dockRow = itemH + (int) ((6 + 12) * density);   // item height plus DockDecoration offsets
-            int gridRows = itemH * rowsBelowDock;
-            int want = Math.max(0, h - dockRow - gridRows - (int) (30 * density));
+            int tileW = AppAdapter.tileWidthPx(inner, COLUMNS, density);
+            int tileH = AppAdapter.tileHeightPx(tileW);
+            // Lift dock so capsule bottom has ~40dp space from bottom
+            int want = Math.max(0, h - tileH - (int) (70 * density));
             if (grid.getPaddingTop() != want) {
                 grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
             }
         });
 
-        // Keep the glass glued to its tile while the grid scrolls.
         grid.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+                int scrollY = rv.computeVerticalScrollOffset();
+
+                // 1. Clock widget fade/hide: Immediate on scroll (fade only, no slide)
+                if (leftBlock != null) {
+                    if (scrollY > 0 && lastFocused >= COLUMNS) {
+                        if (leftBlock.getVisibility() == View.VISIBLE) {
+                            leftBlock.animate().cancel();
+                            leftBlock.setAlpha(0f);
+                            leftBlock.setVisibility(View.INVISIBLE);
+                        }
+                    } else if (lastFocused < COLUMNS) {
+                        if (leftBlock.getVisibility() != View.VISIBLE) {
+                            leftBlock.setTranslationY(0f);
+                            leftBlock.setVisibility(View.VISIBLE);
+                            leftBlock.animate().cancel();
+                            leftBlock.animate().alpha(1f).setDuration(180).start();
+                        }
+                    }
+                }
+
+                // 2. Menu (top buttons) fade/hide: Hide when expanded to grid so no overlap with top dock
+                if (menu != null) {
+                    if (scrollY > 0 && lastFocused >= COLUMNS) {
+                        if (menu.getVisibility() == View.VISIBLE) {
+                            menu.animate().cancel();
+                            menu.animate().alpha(0f).setDuration(120)
+                                    .withEndAction(() -> menu.setVisibility(View.INVISIBLE)).start();
+                        }
+                    } else if (lastFocused < COLUMNS) {
+                        if (menu.getVisibility() != View.VISIBLE) {
+                            menu.setVisibility(View.VISIBLE);
+                            menu.animate().cancel();
+                            menu.animate().alpha(1f).setDuration(180).start();
+                        }
+                    }
+                }
+
+                // 3. Tuck row 1 when parked at dock so it does not peek; reveal smoothly on scroll
+                int tuckThreshold = (int) (36 * density);
+                float tuckProgress = Math.min(1f, scrollY / (float) tuckThreshold);
+                float tuckTransY = (1f - tuckProgress) * (34f * density);
+                for (int i = 0; i < rv.getChildCount(); i++) {
+                    View child = rv.getChildAt(i);
+                    int pos = rv.getChildAdapterPosition(child);
+                    if (pos >= COLUMNS) {
+                        child.setTranslationY(tuckTransY);
+                        child.setAlpha(tuckProgress);
+                    } else {
+                        child.setTranslationY(0f);
+                        child.setAlpha(1f);
+                    }
+                }
+
                 if (!glassShown) return;
                 glassTargetY -= dy;
                 glassScrollShift -= dy;
@@ -390,6 +520,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
         }
 
+        menu = findViewById(R.id.topButtons);
         btnInputs = findViewById(R.id.btnInputs);
         View btnSettings = findViewById(R.id.btnSettings);
         btnInputs.setOnClickListener(v -> showInputs());
@@ -538,6 +669,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateGreeting();
         updateWifiLabel();
         updateInputsButton();
+        if (weatherManager != null) weatherManager.refreshIfStale();
+        if (prayerManager != null && weatherManager != null) {
+            prayerManager.refreshIfStale(weatherManager.getLastCity());
+        }
         sky.update();
         handler.postDelayed(minuteTick, MINUTE_MS);
         if (festive && diya != null) {
@@ -678,35 +813,32 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         float x = r.exactCenterX() - w / 2f;
         float y = r.exactCenterY() - h / 2f - (advancedEffects ? 4f * density : 0f);
 
-        ViewGroup.LayoutParams lp = glass.getLayoutParams();
-        if (lp.width != (int) w || lp.height != (int) h) {
-            lp.width = (int) w;
-            lp.height = (int) h;
-            glass.setLayoutParams(lp);
-            // GlassView draws its slab inset by pad, i.e. exactly over the zoomed tile: same corners as the tile.
-            glass.setRadius(AppAdapter.cornerRadius(card.getWidth(), density) * scale);
-        }
-        glassTargetX = x;
-        glassTargetY = y;
-        if (!glassShown) {
-            springX.cancel();
-            springY.cancel();
-            glass.setTranslationX(x);
-            glass.setTranslationY(y);
-            if (animations) glass.animate().alpha(1f).setDuration(reducedMotion ? 100 : 180).start();
-            else glass.setAlpha(1f);
-            glassShown = true;
-        } else if (!animations) {
-            springX.cancel();
-            springY.cancel();
-            glass.setTranslationX(x);
-            glass.setTranslationY(y);
-        } else {
-            springX.animateToFinalPosition(x);
-            springY.animateToFinalPosition(y - glassScrollShift);
+        if (glass != null) {
+            glass.setVisibility(View.GONE);
+            glass.setAlpha(0f);
         }
         View item = (View) card.getParent();
         if (position < COLUMNS) {
+            applyBackgroundBlur(false);
+            if (leftBlock != null) {
+                leftBlock.setVisibility(View.VISIBLE);
+                leftBlock.setTranslationY(0f);
+                leftBlock.animate().cancel();
+                if (animations && !reducedMotion) {
+                    leftBlock.animate().alpha(1f).setDuration(180).start();
+                } else {
+                    leftBlock.setAlpha(1f);
+                }
+            }
+            if (menu != null) {
+                menu.setVisibility(View.VISIBLE);
+                menu.animate().cancel();
+                if (animations && !reducedMotion) {
+                    menu.animate().alpha(1f).setDuration(180).start();
+                } else {
+                    menu.setAlpha(1f);
+                }
+            }
             // Dock: park it at the bottom of the screen and show the top shelf for this app.
             int decoratedTop = item.getTop() - (int) (6 * density);
             int dy = decoratedTop - grid.getPaddingTop();
@@ -719,30 +851,59 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             showHero(position, scroll ? r.top - dy : r.top);
         } else {
+            applyBackgroundBlur(true);
+            if (leftBlock != null) {
+                leftBlock.animate().cancel();
+                leftBlock.setAlpha(0f);
+                leftBlock.setVisibility(View.INVISIBLE);
+            }
+            if (menu != null) {
+                menu.animate().cancel();
+                menu.setAlpha(0f);
+                menu.setVisibility(View.INVISIBLE);
+            }
+            int color = adapter.ambientColorAt(position);
+            transitionAmbient(color);
             hideHero();
-            // Scroll just enough so the whole glass (not only the tile) is visible.
+            // Scroll just enough so the whole tile is visible.
             Rect want = new Rect(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
             grid.requestChildRectangleOnScreen(item, want, reducedMotion);
+        }
+    }
+
+    private void applyBackgroundBlur(boolean enable) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (enable) {
+                RenderEffect blur = RenderEffect.createBlurEffect(45f, 45f, Shader.TileMode.CLAMP);
+                if (sky != null) sky.setRenderEffect(blur);
+                if (ambient != null) ambient.setRenderEffect(blur);
+                View wall = root.getChildAt(0);
+                if (wall != null && wall != sky && wall != ambient && wall != grid && wall != leftBlock) {
+                    wall.setRenderEffect(blur);
+                }
+            } else {
+                if (sky != null) sky.setRenderEffect(null);
+                if (ambient != null) ambient.setRenderEffect(null);
+                View wall = root.getChildAt(0);
+                if (wall != null && wall != sky && wall != ambient && wall != grid && wall != leftBlock) {
+                    wall.setRenderEffect(null);
+                }
+            }
         }
     }
 
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
-        String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
-        float y = dockTopInRoot - 14 * density - 26 * density - heroName.getHeight();
-        boolean changed = !label.contentEquals(heroName.getText());
+        if (heroName != null) {
+            heroName.setVisibility(View.GONE);
+            heroName.setAlpha(0f);
+        }
 
         if (!animations || reducedMotion) {
-            // Snap the shelf instead of sliding and fading it: each of those frames repaints the
-            // full-screen panel, and this switch exists for the GPUs that cannot afford it.
-            heroName.animate().cancel();
+            // Snap ambient instead of sliding and fading it
             ambient.animate().cancel();
-            heroName.setText(label);
-            heroName.setY(y);
-            heroName.setTranslationX(0f);
-            heroName.setAlpha(1f);
             setAmbient(color);
             if (!animations) {
                 ambient.setAlpha(1f);
@@ -757,23 +918,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         if (!heroShown) {
             stopAmbientAnimation();
-            heroName.animate().cancel();
             ambient.animate().cancel();
-            heroName.setText(label);
-            heroName.setY(y);
-            heroName.setTranslationX(0f);
-            heroName.animate().alpha(1f).setDuration(260).start();
             setAmbient(color);
             ambient.animate().alpha(1f).setDuration(600).start();
             heroShown = true;
-        } else if (changed) {
-            if (advancedEffects) heroName.animate().cancel();
-            heroName.animate().alpha(0f).translationX(-12 * density).setDuration(120).withEndAction(() -> {
-                heroName.setText(label);
-                heroName.setY(y);
-                heroName.setTranslationX(12 * density);
-                heroName.animate().alpha(1f).translationX(0f).setDuration(200).start();
-            }).start();
+        } else {
             if (advancedEffects) {
                 transitionAmbient(color);
             } else if (color != ambientColor) {
@@ -782,8 +931,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     ambient.animate().alpha(1f).setDuration(500).start();
                 }).start();
             }
-        } else {
-            heroName.setY(y);
         }
     }
 
@@ -843,15 +990,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void hideHero() {
         if (!heroShown) return;
         stopAmbientAnimation();
-        heroName.animate().cancel();
+        if (heroName != null) heroName.animate().cancel();
         ambient.animate().cancel();
         heroShown = false;
         if (animations) {
-            heroName.animate().alpha(0f).setDuration(reducedMotion ? 100 : 160).start();
-            ambient.animate().alpha(0f).setDuration(reducedMotion ? 140 : 300).start();
+            if (heroName != null) heroName.animate().alpha(0f).setDuration(reducedMotion ? 100 : 160).start();
+            ambient.animate().alpha(0.85f).setDuration(reducedMotion ? 140 : 220).start();
         } else {
-            heroName.setAlpha(0f);
-            ambient.setAlpha(0f);
+            if (heroName != null) heroName.setAlpha(0f);
+            ambient.setAlpha(0.85f);
         }
     }
 
@@ -1177,10 +1324,37 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
             target = position - COLUMNS;
+            if (target < COLUMNS) {
+                applyBackgroundBlur(false);
+                if (leftBlock != null) {
+                    leftBlock.setTranslationY(0f);
+                    leftBlock.setVisibility(View.VISIBLE);
+                    leftBlock.animate().cancel();
+                    leftBlock.animate().alpha(1f).setDuration(180).start();
+                }
+                if (menu != null) {
+                    menu.setVisibility(View.VISIBLE);
+                    menu.animate().cancel();
+                    menu.animate().alpha(1f).setDuration(180).start();
+                }
+            }
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
             if (position >= lastRowStart) return true;     // already on the last row: stay put
             target = Math.min(position + COLUMNS, count - 1);
+            if (position < COLUMNS) {
+                applyBackgroundBlur(true);
+                if (leftBlock != null) {
+                    leftBlock.animate().cancel();
+                    leftBlock.animate().alpha(0f).setDuration(60)
+                            .withEndAction(() -> leftBlock.setVisibility(View.INVISIBLE)).start();
+                }
+                if (menu != null) {
+                    menu.animate().cancel();
+                    menu.animate().alpha(0f).setDuration(60)
+                            .withEndAction(() -> menu.setVisibility(View.INVISIBLE)).start();
+                }
+            }
         }
         focusTile(target);
         // The default focus search clicks for Left/Right; Up/Down are handled here, so click for them too.

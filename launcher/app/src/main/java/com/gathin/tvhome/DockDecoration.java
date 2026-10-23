@@ -21,10 +21,9 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     DockDecoration(int dockSize, float density) {
         this.dockSize = dockSize;
         this.density = density;
-        band.setColor(0xFF141416);
         edge.setStyle(Paint.Style.STROKE);
         edge.setStrokeWidth(density);
-        edge.setColor(0x1FFFFFFF);
+        edge.setColor(0x38FFFFFF);
     }
 
     @Override
@@ -33,7 +32,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         int pos = parent.getChildAdapterPosition(view);
         if (pos >= 0 && pos < dockSize) {
             outRect.top = (int) (6 * density);
-            outRect.bottom = (int) (12 * density);
+            outRect.bottom = (int) (14 * density);
         }
     }
 
@@ -58,9 +57,16 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             }
         }
         if (!any) return;
-        float pad = 14 * density;
-        rect.inset(-pad, -pad);
-        float radius = 26 * density;
+        float padX = 20 * density;
+        float padY = 16 * density;
+        rect.inset(-padX, -padY);
+        float radius = 24 * density;
+
+        band.setShader(new android.graphics.LinearGradient(
+                0, rect.top, 0, rect.bottom,
+                0x2EFFFFFF, 0x14FFFFFF,
+                android.graphics.Shader.TileMode.CLAMP));
+
         c.drawRoundRect(rect, radius, radius, band);
         c.drawRoundRect(rect, radius, radius, edge);
     }

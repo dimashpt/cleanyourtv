@@ -167,6 +167,9 @@ final class Config {
         // current theme without clearing choices from an older launcher version.
         SharedPreferences choices = ctx.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE);
         syncThemeChoices(choices, dir, file);
+        if (!choices.getBoolean("columns_5_migrated", false)) {
+            choices.edit().putInt("columns", 5).putBoolean("columns_5_migrated", true).apply();
+        }
         int chosenColumns = choices.getInt("columns", columns);
         if (chosenColumns >= 4 && chosenColumns <= 7) columns = chosenColumns;
         List<String> userDock = readUserDockApps(choices, columns);

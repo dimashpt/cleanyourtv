@@ -1,230 +1,211 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Hebrew-only header positioning. Other languages use layout/activity_main.xml. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#FF000000">
 
-    <!-- Time-of-day backdrop, drawn once a minute (config.xml sky_intensity; 0 keeps it hidden).
-         Keep in step with layout/activity_main.xml: every view there must exist here too. -->
     <com.gathin.tvhome.SkyView
         android:id="@+id/sky"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:importantForAccessibility="no" />
 
-    <!-- Ambient glow in the colour of the focused dock app. -->
     <View
         android:id="@+id/ambient"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:alpha="0" />
 
-    <!-- Top shelf: the focused dock app's name, positioned above the dock in code. -->
     <TextView
         android:id="@+id/heroName"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="68dp"
-        android:layout_gravity="right"
-        android:gravity="right"
-        android:alpha="0"
-        android:textColor="#FFFFFFFF"
-        android:textSize="48sp"
-        android:fontFamily="@font/outfit"
-        android:fontVariationSettings="'wght' 300"
-        android:letterSpacing="-0.02"
-        android:includeFontPadding="false"
-        android:singleLine="true" />
+        android:visibility="gone" />
 
-    <LinearLayout
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/grid"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:paddingStart="56dp"
-        android:paddingEnd="56dp"
-        android:paddingTop="26dp">
+        android:paddingStart="68dp"
+        android:paddingEnd="68dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="40dp"
+        android:clipToPadding="false"
+        android:clipChildren="false"
+        android:overScrollMode="never"
+        android:scrollbars="none"
+        android:descendantFocusability="afterDescendants" />
 
-        <RelativeLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+    <LinearLayout
+        android:id="@+id/leftBlock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical|end"
+        android:layout_marginEnd="56dp"
+        android:orientation="vertical">
 
-            <LinearLayout
-                android:id="@+id/leftBlock"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_alignParentEnd="true"
-                android:layout_toEndOf="@+id/topButtons"
-                android:layout_marginStart="16dp"
-                android:orientation="horizontal"
-                android:gravity="right|bottom">
+        <TextView
+            android:id="@+id/greeting"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone" />
 
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="bottom"
-                    android:layout_marginBottom="9dp"
-                    android:orientation="vertical">
+        <TextView
+            android:id="@+id/shamsiDate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone" />
 
-                    <!-- Shamsi date ("27 Mehr 1405"), shown when shamsi_date is on. -->
-                    <TextView
-                        android:id="@+id/shamsiDate"
-                        android:gravity="right"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:textColor="#E6FFFFFF"
-                        android:textSize="17sp"
-                        android:fontFamily="@font/outfit"
-                        android:fontVariationSettings="'wght' 400"
-                        android:letterSpacing="0.02"
-                        android:includeFontPadding="false"
-                        android:visibility="gone" />
+        <TextClock
+            android:id="@+id/ampm"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone" />
 
-                    <TextClock
-                        android:id="@+id/date"
-                        android:gravity="right"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:format12Hour="@string/date_format"
-                        android:format24Hour="@string/date_format"
-                        android:textColor="#A6FFFFFF"
-                        android:textSize="14sp"
-                        android:fontFamily="@font/outfit"
-                        android:fontVariationSettings="'wght' 400"
-                        android:letterSpacing="0.14"
-                        android:textAllCaps="true" />
-                </LinearLayout>
+        <TextClock
+            android:id="@+id/date"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:format12Hour="EEEE, MMMM d"
+            android:format24Hour="EEEE, MMMM d"
+            android:textColor="#CCFFFFFF"
+            android:textSize="20sp"
+            android:fontFamily="@font/outfit_medium"
+            android:letterSpacing="0.01"
+            android:includeFontPadding="false" />
 
-                <View
-                    android:layout_width="1dp"
-                    android:layout_height="26dp"
-                    android:layout_gravity="bottom"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginEnd="16dp"
-                    android:layout_marginBottom="8dp"
-                    android:background="#33FFFFFF" />
+        <TextClock
+            android:id="@+id/clock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="6dp"
+            android:format12Hour="HH:mm"
+            android:format24Hour="HH:mm"
+            android:textColor="#FFFFFFFF"
+            android:textSize="96sp"
+            android:fontFamily="@font/outfit_light"
+            android:letterSpacing="-0.04"
+            android:includeFontPadding="false" />
 
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-                    <TextView
-                        android:id="@+id/greeting"
-                        android:gravity="center_horizontal"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:textColor="#8CFFFFFF"
-                        android:textSize="12sp"
-                        android:fontFamily="@font/outfit"
-                        android:fontVariationSettings="'wght' 500"
-                        android:letterSpacing="0.22"
-                        android:textAllCaps="true" />
+        <LinearLayout
+            android:id="@+id/weatherRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-                    <LinearLayout
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:baselineAligned="true">
-                        <TextClock
-                            android:id="@+id/clock"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:format12Hour="h:mm"
-                            android:format24Hour="HH:mm"
-                            android:textColor="#FFFFFFFF"
-                            android:textSize="52sp"
-                            android:fontFamily="@font/outfit"
-                            android:fontVariationSettings="'wght' 300"
-                            android:letterSpacing="-0.04"
-                            android:includeFontPadding="false" />
-
-                        <TextClock
-                            android:id="@+id/ampm"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="6dp"
-                            android:layout_gravity="bottom"
-                            android:layout_marginBottom="8dp"
-                            android:format12Hour="a"
-                            android:format24Hour=""
-                            android:textColor="#B3FFFFFF"
-                            android:textSize="15sp"
-                            android:fontFamily="@font/outfit"
-                            android:fontVariationSettings="'wght' 500"
-                            android:letterSpacing="0.08"
-                            android:textAllCaps="true" />
-                    </LinearLayout>
-                </LinearLayout>
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/topButtons"
+            <TextView
+                android:id="@+id/weatherIcon"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_alignParentStart="true"
-                android:layout_alignBottom="@id/leftBlock"
-                android:layout_marginBottom="6dp"
-                android:orientation="horizontal">
+                android:text="○"
+                android:textColor="#B3FFFFFF"
+                android:textSize="14sp"
+                android:fontFamily="@font/outfit_regular"
+                android:layout_marginStart="6dp" />
 
-                <TextView
-                    android:id="@+id/btnSettings"
-                    style="@style/TopButton"
-                    android:text="@string/settings"
-                    android:drawableStart="@drawable/ic_settings"
-                    android:nextFocusDown="@+id/grid" />
+            <TextView
+                android:id="@+id/weatherText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="29° Partly Cloudy  H:33° L:21°"
+                android:textColor="#B3FFFFFF"
+                android:textSize="15sp"
+                android:fontFamily="@font/outfit_regular"
+                android:letterSpacing="0.01"
+                android:includeFontPadding="false" />
+        </LinearLayout>
 
-                <TextView
-                    android:id="@+id/btnWifi"
-                    style="@style/TopButton"
-                    android:maxWidth="180dp"
-                    android:singleLine="true"
-                    android:ellipsize="end"
-                    android:text="@string/wifi"
-                    android:drawableStart="@drawable/ic_wifi"
-                    android:nextFocusDown="@+id/grid" />
+        <LinearLayout
+            android:id="@+id/prayerRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-                <TextView
-                    android:id="@+id/btnInputs"
-                    style="@style/TopButton"
-                    android:text="@string/inputs"
-                    android:drawableStart="@drawable/ic_input"
-                    android:nextFocusDown="@+id/grid" />
-            </LinearLayout>
-        </RelativeLayout>
+            <TextView
+                android:id="@+id/prayerIcon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="☾"
+                android:textColor="#CCFFFFFF"
+                android:textSize="15sp"
+                android:fontFamily="@font/outfit_regular"
+                android:layout_marginStart="8dp" />
 
-        <!-- The wrapper clips at the grid's edge; the grid itself must not clip so scaled tiles can overflow their cells. -->
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:layout_marginTop="10dp">
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/grid"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:paddingTop="10dp"
-                android:paddingBottom="40dp"
-                android:clipToPadding="false"
-                android:clipChildren="false"
-                android:overScrollMode="never"
-                android:scrollbars="none"
-                android:descendantFocusability="afterDescendants" />
-        </FrameLayout>
+            <TextView
+                android:id="@+id/prayerText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Maghrib 17:50 · in 8 h 57 min"
+                android:textColor="#CCFFFFFF"
+                android:textSize="16sp"
+                android:fontFamily="@font/outfit_regular"
+                android:letterSpacing="0.01"
+                android:includeFontPadding="false" />
+        </LinearLayout>
     </LinearLayout>
 
-    <!-- The single floating glass highlight that springs between tiles. -->
+    <LinearLayout
+        android:id="@+id/topButtons"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="26dp"
+        android:layout_marginStart="56dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/btnSettings"
+            style="@style/TopButton"
+            android:text="@string/settings"
+            android:drawableStart="@drawable/ic_settings"
+            android:nextFocusDown="@+id/grid" />
+
+        <TextView
+            android:id="@+id/btnWifi"
+            style="@style/TopButton"
+            android:maxWidth="180dp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:text="@string/wifi"
+            android:drawableStart="@drawable/ic_wifi"
+            android:nextFocusDown="@+id/grid" />
+
+        <TextView
+            android:id="@+id/btnInputs"
+            style="@style/TopButton"
+            android:text="@string/inputs"
+            android:drawableStart="@drawable/ic_input"
+            android:nextFocusDown="@+id/grid" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/dockEditHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:background="@drawable/pill_bg"
+        android:text="@string/dock_edit_hint"
+        android:textColor="#E6FFFFFF"
+        android:textSize="13sp"
+        android:fontFamily="@font/outfit"
+        android:elevation="24dp"
+        android:visibility="gone" />
+
     <com.gathin.tvhome.GlassView
         android:id="@+id/glass"
         android:layout_width="10dp"
         android:layout_height="10dp"
+        android:visibility="gone"
         android:alpha="0"
         android:importantForAccessibility="no" />
 </FrameLayout>
